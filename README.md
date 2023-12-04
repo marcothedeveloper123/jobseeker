@@ -1,7 +1,6 @@
 # JobSeeker Project
 
 ## Overview
-## PROBLEMS TO SOLVE
 1. Recruiter AIs scan your résumé for keywords. If they don’t find the keywords, they discard your application. Let’s increase your chances at landing the job :)
 2. When you do get invited for an interview, you are bound to bump into the question "What is your expected salary?" Most of us have no idea what to answer. Let's give you a leg up!
 
