@@ -14,8 +14,8 @@ We do this project for the mythical Job Seeker
 
 ## Features
 - Scraping job postings
- - use something like [apify.com](https://apify.com/bebity/linkedin-jobs-scraper?cmdf=linkedin+job-search-api)
- - do the scraping ourselves
+  - use something like [apify.com](https://apify.com/bebity/linkedin-jobs-scraper?cmdf=linkedin+job-search-api)
+  - do the scraping ourselves
 - Identifying skills gaps in resumes
 - Providing salary range information
 
