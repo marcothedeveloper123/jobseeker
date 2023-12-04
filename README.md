@@ -19,7 +19,7 @@ We do this project for the mythical Job Seeker
 - Identifying skills gaps in resumes
 - Providing salary range information
 
-## Data Ingestion/Curation [Medallion Architecture reference](https://www.databricks.com/glossary/medallion-architecture)
+## Data Ingestion/Curation - [Medallion Architecture reference](https://www.databricks.com/glossary/medallion-architecture)
 - Bronze Folder = Raw data sets labeled by sources. i.e. Data ingested using Apify from linkedin is stored at - bronze/apify/linkedin
 - Silver Folder = Cleansed and conformed data. i.e. Data ingested using Apify from linkedin is transformed to contain the information we want to utilize to potentially assist job seekers, such as Job description, title, location, etc...
 - Gold Folder = Curated solution ready data. i.e. Data cleaned and conformed that is ready to be used for providing insights to job seekers on improving their resume or skills to be more desirable in the job market.
