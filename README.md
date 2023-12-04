@@ -4,6 +4,14 @@
 1. Recruiter AIs scan your résumé for keywords. If they don’t find the keywords, they discard your application. Let’s increase your chances at landing the job :)
 2. When you do get invited for an interview, you are bound to bump into the question "What is your expected salary?" Most of us have no idea what to answer. Let's give you a leg up!
 
+## Our customer
+We do this project for the mythical Job Seeker
+
+## Our job types
+- Data Engineer
+- AI Application Developer
+- AI Strategy Consultant
+
 ## Features
 - Scraping job postings
 - Identifying skills gaps in resumes
