@@ -439,7 +439,7 @@ def save_to_file(jobs, args):
         df.to_json(final_path, orient="records", lines=True)
     elif file_format == TO_CSV:
         df.to_csv(final_path, index=False)
-    print(f"Data saved to {final_path}")
+    print(f"\033[92mData saved to {final_path}\033[0m")
 
 
 def rename_existing_file(base_path, base_name, file_extension):
@@ -572,12 +572,23 @@ def main():
                     try:
                         job_title_element = item.find("a", class_=site.job_title())
                         if job_title_element is None:
-                            logger.info("Re-scrolling to load job posting number 8")
+                            logger.error("Re-scrolling to load job posting")
                             navigator.re_scroll()
                             page_source = navigator.page_source()
                             search_result_list = page_source.find(
                                 "div", class_=site.search_results_list()
                             )
+                            job_list_items = search_result_list.find_all(
+                                "li", class_=site.job_list_item()
+                            )
+                            if len(job_list_items) < index + 1:
+                                logger.error(
+                                    "No job title found. Skipping to the next page."
+                                )
+                                job_pbar.update(
+                                    1
+                                )  # Update progress bar before breaking out of inner loop
+                                break
                             item = search_result_list.find_all(
                                 "li", class_=site.job_list_item()
                             )[index]
