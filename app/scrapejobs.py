@@ -16,6 +16,7 @@ import pandas as pd
 import argparse
 from tqdm import tqdm
 import logging
+import re
 
 """
 This script scrapes job listings from LinkedIn based on given job title, geographical area, and remote preference.
@@ -29,28 +30,52 @@ python scrapejobs.py -j "Data Engineer" -g "European Union" -r "Remote" -p 5 -d 
 
 Arguments:
 -j/--job_title: Job title to search for (mandatory)
--g/--geography: Geographical area for the job search (default: "European Union")
--r/--remote: Remote job preference (default: "Remote")
+-g/--geography: Geographical area for the job search — "european-union" or "united-states" (default: "European Union")
+-r/--remote: Remote job preference — on-site, remote, hybrid, on-site-or-remote, on-site-or-hybrid, hybrid-or-remote, or any (default: "Remote")
 -p/--page_count: Number of pages to scrape (default: 5)
--d/--directory: Directory to save the JSON file (default: current directory)
+-d/--directory: Directory to save the data file (default: current directory)
+-f/--format: File format to save to JSON or CSV (default: "json")
 """
 
 TO_JSON = "json"
 TO_CSV = "csv"
 
 # Logger configuration
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
 # logging.basicConfig(
-#     level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s"
+#     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 # )
+logging.basicConfig(
+    level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 logger = logging.getLogger(__name__)
 
 
 class WebNavigator:
-    # Initializes the WebNavigator with a site object and query details
+    """
+    A web navigator class that interacts with a website using Selenium WebDriver.
+
+    Args:
+        site: The site object representing the website to navigate.
+        query: The query details.
+
+    Attributes:
+        driver: The Selenium WebDriver instance.
+        site: The site object representing the website being navigated.
+        query: The query details.
+
+    Methods:
+        __init__(self, site, query): Initializes the WebNavigator with a site object and query details.
+        login(self): Logs into the site using provided credentials.
+        accept_cookies(self, cookie_button_xpath): Accepts cookies if the button is present.
+        wait_for_manual_verification(self): Waits for manual verification on LinkedIn.
+        search_results(self, start): Navigates to the search results page and scrolls to load all job postings.
+        open_post(self, job_link): Opens a job posting and clicks 'See more' if necessary.
+        safe_get(self, url, retries=3): Safely gets the URL, retrying a specified number of times in case of network issues.
+        page_source(self): Returns the current page source as a BeautifulSoup object.
+        quit(self): Quits the browser.
+    """
+
     def __init__(self, site, query):
         self.driver = webdriver.Chrome()
         self.driver.maximize_window()
@@ -59,8 +84,24 @@ class WebNavigator:
         self.query = query
         self.login()
 
-    # Logs into the site using provided credentials
     def login(self):
+        """
+        Logs into the website using the provided credentials.
+
+        This function performs the following steps:
+        1. Navigates to the login URL of the website.
+        2. Waits for 2 seconds to ensure the page is loaded.
+        3. Accepts cookies if the cookies button is present.
+        4. Enters the email and password in the respective fields.
+        5. Clicks on the login button.
+        6. If the login URL is for LinkedIn, waits for manual verification.
+
+        Raises:
+            WebDriverException: If the login process fails.
+
+        Returns:
+            None
+        """
         self.safe_get(self.site.login_url)
         time.sleep(2)
 
@@ -80,8 +121,16 @@ class WebNavigator:
             logger.error("Login failed. Please check your credentials.")
             exit(1)
 
-    # Accepts cookies if the button is present
     def accept_cookies(self, cookie_button_xpath):
+        """
+        Clicks on the accept cookies button if it exists.
+
+        Args:
+            cookie_button_xpath (str): The XPath of the accept cookies button.
+
+        Returns:
+            None
+        """
         try:
             cookie_button = self.driver.find_element(By.XPATH, cookie_button_xpath)
             cookie_button.click()
@@ -93,8 +142,21 @@ class WebNavigator:
             "Please complete the LinkedIn verification and then press Enter to continue..."
         )
 
-    # Navigates to the search results page and scrolls to load all job postings
     def search_results(self, start):
+        """
+        Searches for job results based on the provided start index.
+
+        Args:
+            start (int): The index of the first job result to retrieve.
+
+        Returns:
+            None
+
+        Raises:
+            TimeoutException: If the page does not load within the specified time.
+            WebDriverException: If there is an issue with the web driver.
+
+        """
         try:
             params = urlencode(
                 {
@@ -102,6 +164,7 @@ class WebNavigator:
                     "geoId": self.query.geography,
                     "f_WT": self.query.remote,
                     "start": start,
+                    "f_E": self.query.experience,
                 }
             )
             url = f"https://www.linkedin.com/jobs/search/?{params}"
@@ -133,8 +196,13 @@ class WebNavigator:
         soup = BeautifulSoup(self.driver.page_source, "html.parser")
         return soup
 
-    # Opens a job posting and clicks 'See more' if necessary
     def open_post(self, job_link):
+        """
+        Retrieves the page source of the current web page.
+
+        :param self: The instance of the class.
+        :return: A BeautifulSoup object representing the parsed HTML of the page source.
+        """
         clickable_element = self.driver.find_element(
             By.XPATH, f"//a[@href='{job_link}']"
         )
@@ -151,7 +219,32 @@ class WebNavigator:
         except:
             pass
 
+    def re_scroll(self):
+        scrollresults = self.driver.find_element(
+            By.CLASS_NAME, self.site.search_results_list()
+        )
+
+        for i in range(300, 3000, 100):
+            self.driver.execute_script(
+                "arguments[0].scrollTo(0, {})".format(i), scrollresults
+            )
+
     def safe_get(self, url, retries=3):
+        """
+        Retrieves the specified URL safely by handling exceptions and retries.
+
+        Args:
+            url (str): The URL to retrieve.
+            retries (int, optional): The number of times to retry in case of network issues. Defaults to 3.
+
+        Raises:
+            TimeoutException: If the page load timeout is reached.
+            WebDriverException: If there is an issue with the web driver.
+
+        Returns:
+            None: If the URL is successfully retrieved.
+
+        """
         attempt = 0
         while attempt < retries:
             try:
@@ -172,13 +265,39 @@ class WebNavigator:
 
 
 class LinkedIn:
-    # Defines LinkedIn-specific configurations
+    """
+    Defines LinkedIn-specific configurations and provides methods for interacting with the LinkedIn website.
+
+    Functions:
+    - __init__(): Initializes the LinkedIn class and sets the login URL, email, and password.
+    - cookie_button_xpath(): Returns the xpath for the cookie button on the LinkedIn login page.
+    - login_button_xpath(): Returns the xpath for the login button on the LinkedIn login page.
+    - set_geography(geography): Maps the input geography to its corresponding value and returns it.
+    - set_remote(remote): Maps the input remote option to its corresponding value and returns it. If no match is found, it returns the default value "1,2,3".
+    - job_list_container(): Returns the class name of the job list container element on the LinkedIn jobs search page.
+    - job_list_item(): Returns the class name of the job list items on the LinkedIn jobs search page.
+    - search_results_list(): Returns the class name of the search results list on the LinkedIn jobs search page.
+    - job_title(): Returns the class name of the job title element on the LinkedIn job details page.
+    - company_name(): Returns the class name of the company name element on the LinkedIn job details page.
+    - location(): Returns the class name of the location element on the LinkedIn job details page.
+    - job_link(): Returns the class name of the job link element on the LinkedIn job details page.
+    - see_more_button(): Returns the class name of the "See More" button on the LinkedIn job details page.
+    - job_description(): Returns the class name of the job description element on the LinkedIn job details page.
+    - base_url(): Returns the base URL of the LinkedIn website.
+    """
+
     def __init__(self):
         self.login_url = "https://www.linkedin.com/login"
         self.email = os.getenv("LINKEDIN_EMAIL")
         self.password = os.getenv("LINKEDIN_PASSWORD")
 
     def cookie_button_xpath(self):
+        """
+        Returns the XPath for the cookie button on the LinkedIn webpage.
+
+        :param self: The instance of the class.
+        :return: The XPath string for the cookie button.
+        """
         xpath = "/html/body/div/main/div[1]/div/section/div/div[2]/button[2]"
         return xpath
 
@@ -191,6 +310,9 @@ class LinkedIn:
             "european-union": "91000000",
             "united-states": "103644278",
         }
+        return geography_mappings.get(
+            geography.lower(), "91000000"
+        )  # Default to "european-union" if not matched
         # if geography == "European Union":
         #     return 91000000
         # if geography == "United States":
@@ -209,6 +331,30 @@ class LinkedIn:
         return remote_mappings.get(
             remote.lower(), "1,2,3"
         )  # Default to "any" if not matched
+
+    def set_experience(self, experience):
+        # If experience is a valid string, use it; otherwise, default to "1,2,3,4,5,6"
+        return (
+            experience if self.is_valid_experience_input(experience) else "1,2,3,4,5,6"
+        )
+
+    def is_valid_experience_input(self, input_string):
+        # Regex pattern to match the specified format for the experience parameter
+        pattern = r"^(?:[1-6](?:,[1-6]){0,5})$"
+
+        # Check if the input matches the regex pattern
+        if re.match(pattern, input_string):
+            numbers = set(input_string.split(","))
+
+            # Ensure all numbers are unique and in the range 1-6
+            return all(num in {"1", "2", "3", "4", "5", "6"} for num in numbers)
+
+        return False
+
+    """
+    The following methods return the class names of the
+    corresponding elements on the LinkedIn job details page.
+    """
 
     def job_list_container(self):
         container = "scaffold-layout__list"
@@ -253,11 +399,12 @@ class LinkedIn:
 
 class Query:
     # Initializes the query with job title, geographical area, and remote preference
-    def __init__(self, site, job_title, geography, remote):
+    def __init__(self, site, job_title, geography, remote, experience):
         self.site = site
         self.job_title = job_title
         self.geography = site.set_geography(geography)
         self.remote = site.set_remote(remote)
+        self.experience = site.set_experience(experience)
 
 
 class Job:
@@ -274,7 +421,7 @@ class Job:
 
 
 def save_to_file(jobs, args):
-    # Saves the scraped data to a JSON file
+    # Saves the scraped data to a CSV or JSON file
     file_format = args.format
     job_dicts = [job.__dict__ for job in jobs]
     df = pd.DataFrame(job_dicts)
@@ -292,7 +439,7 @@ def save_to_file(jobs, args):
         df.to_json(final_path, orient="records", lines=True)
     elif file_format == TO_CSV:
         df.to_csv(final_path, index=False)
-    logger.info(f"Data saved to {final_path}")
+    print(f"Data saved to {final_path}")
 
 
 def rename_existing_file(base_path, base_name, file_extension):
@@ -326,10 +473,7 @@ def main():
         "--geography",
         type=str,
         default="european-union",
-        choices=[
-            "european-union",
-            "united-states"
-        ],
+        choices=["european-union", "united-states"],
         help='Geographical area for the job search. Default is "european-union".',
     )
     # parser.add_argument(
@@ -378,6 +522,14 @@ def main():
         help="Format of the output file. Can be either 'csv' or 'json'. Default is 'json'.",
     )
 
+    parser.add_argument(
+        "-e",
+        "--experience",
+        type=str,
+        default="1,2,3,4,5,6",
+        help='Specify the required experience: internship ("1"), entry-level ("2"), associate ("3"), mid-senior-level ("4"), director ("5"), executive ("6"). Combine experience levels separated by commas (lowest level first. E.g., "1,2,3"). Default is "1,2,3,4,5,6".',
+    )
+
     args = parser.parse_args()
 
     load_dotenv()
@@ -387,6 +539,7 @@ def main():
         job_title=args.job_title,
         geography=args.geography,
         remote=args.remote,
+        experience=args.experience,
     )
     navigator = WebNavigator(site=site, query=query)
     page_count = args.page_count
@@ -417,15 +570,27 @@ def main():
                     logger.info(f"Processing job {index + 1}")
 
                     try:
-                        job_title = item.find("a", class_=site.job_title()).text.strip()
-                        if not job_title:
-                            logger.error(
-                                "No job title found. Skipping to the next page."
+                        job_title_element = item.find("a", class_=site.job_title())
+                        if job_title_element is None:
+                            logger.info("Re-scrolling to load job posting number 8")
+                            navigator.re_scroll()
+                            page_source = navigator.page_source()
+                            search_result_list = page_source.find(
+                                "div", class_=site.search_results_list()
                             )
-                            job_pbar.update(
-                                1
-                            )  # Update progress bar before breaking out of inner loop
-                            break
+                            item = search_result_list.find_all(
+                                "li", class_=site.job_list_item()
+                            )[index]
+                            job_title_element = item.find("a", class_=site.job_title())
+                            if job_title_element is None:
+                                logger.error(
+                                    "No job title found. Skipping to the next page."
+                                )
+                                job_pbar.update(
+                                    1
+                                )  # Update progress bar before breaking out of inner loop
+                                break
+                        job_title = job_title_element.text.strip()
                         logger.info(f"Job title: {job_title}")
                         company_name = item.find(
                             "span", class_=site.company_name()
@@ -444,6 +609,14 @@ def main():
                         job_description_element = page_source.find(
                             "div", class_=site.job_description()
                         )
+                        if job_description_element is None:
+                            logger.error(
+                                "No job description found. Skipping to the next page."
+                            )
+                            job_pbar.update(
+                                1
+                            )  # Update progress bar before breaking out of inner loop
+                            break
                         job_description = job_description_element.text.strip()
                         job_link = site.base_url() + job_link
                         job = Job(
