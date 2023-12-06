@@ -15,22 +15,24 @@ from pprint import pprint
 
 from bs4 import BeautifulSoup
 
+import pandas as pd
 
-def get_page_source(url):
-    try:
-        # Open the URL
-        driver.get(url)
 
-        # Wait for a few seconds to ensure the page loads completely (you can adjust the time)
-        time.sleep(5)
+# def get_page_source(url):
+#     try:
+#         # Open the URL
+#         driver.get(url)
 
-        # Get the page source
-        page_source = driver.page_source
-    finally:
-        # Close the driver
-        driver.quit()
+#         # Wait for a few seconds to ensure the page loads completely (you can adjust the time)
+#         time.sleep(5)
 
-    return page_source
+#         # Get the page source
+#         page_source = driver.page_source
+#     finally:
+#         # Close the driver
+#         driver.quit()
+
+#     return page_source
 
 
 # Load environment variables
@@ -100,6 +102,15 @@ for page_num in range(1, num_pages + 1):
         EC.presence_of_element_located((By.CLASS_NAME, "scaffold-layout__list"))
     )
 
+    # LinkedIn displays the search results in a scrollable <div> on the left side, we have to scroll to its bottom
+    scrollresults = driver.find_element(By.CLASS_NAME, "jobs-search-results-list")
+
+    time.sleep(1)
+
+    # Selenium only detects visible elements; if we scroll to the bottom too fast, only 8-9 results will be loaded into IDs list
+    for i in range(300, 3000, 100):
+        driver.execute_script("arguments[0].scrollTo(0, {})".format(i), scrollresults)
+
     page_source = driver.page_source
     # Parse the HTML source code using BeautifulSoup
     soup = BeautifulSoup(page_source, "html.parser")
@@ -110,17 +121,30 @@ for page_num in range(1, num_pages + 1):
 
     # Initialize lists to store the extracted information
     class Job:
-        def __init__(self, job_title, company_name, location, job_link, job_id):
+        def __init__(
+            self,
+            job_title,
+            company_name,
+            location,
+            job_link,
+            job_id,
+            job_description=None,
+        ):
             self.job_title = job_title
             self.company_name = company_name
             self.location = location
             self.job_link = job_link
             self.job_id = job_id
+            self.job_description = job_description
 
+    index = 0
     # Iterate through each search result item
     for item in search_result_list.find_all(
         "li", class_="jobs-search-results__list-item"
     ):
+        print(f"Processing job {index + 1}")
+
+        # Extract the job details with BeautifulSoup
         # Extract job title
         try:
             job_title = item.find("a", class_="job-card-list__title").text.strip()
@@ -160,14 +184,73 @@ for page_num in range(1, num_pages + 1):
         except:
             # print("error")
             continue
+        # Use Selenium to click the job link
+        if job_link:
+            try:
+                print(f"Clicking on job link: {job_link}")
+                clickable_element = driver.find_element(
+                    By.XPATH, f"//a[@href='{job_link}']"
+                )
+                driver.execute_script(
+                    "arguments[0].scrollIntoView();", clickable_element
+                )
+                clickable_element.click()
+                time.sleep(2)  # Wait for the job details to load
+
+                # Check for the 'See more' button and click if present
+                try:
+                    print("Finding 'See more' button")
+                    see_more_button = driver.find_element(
+                        By.CLASS_NAME, "jobs-description__footer-button"
+                    )
+                    if see_more_button.is_displayed():
+                        print("Clicking 'See more' button")
+                        see_more_button.click()
+                        time.sleep(1)  # Wait for the full description to load
+                except NoSuchElementException:
+                    pass  # 'See more' button not found or not needed
+
+                # Extract the job description
+                # job_description_element = driver.find_element(By.CLASS_NAME, "jobs-description-content__text")
+                # job_description = job_description_element.text.strip() if job_description_element else None
+
+                job_description_element = driver.find_element(
+                    By.CLASS_NAME, "jobs-description-content__text"
+                )
+                job_description = (
+                    job_description_element.text.strip()
+                    if job_description_element
+                    else None
+                )
+
+            except NoSuchElementException:
+                job_description = None
         try:
-            job = Job(job_title, company_name, location, job_link, job_id)
+            print(f"Adding job number {index + 1} - {job_title}")
+            job = Job(
+                job_title, company_name, location, job_link, job_id, job_description
+            )
             jobs.append(job)
         except:
             # print("error")
             continue
+        index += 1
 
 driver.quit()
 
-pprint(jobs)
 len(jobs)
+
+# Convert Job objects into dictionaries
+job_dicts = [job.__dict__ for job in jobs]
+
+# Create a DataFrame
+df = pd.DataFrame(job_dicts)
+
+# Print DataFrame for verification
+print(df.head())
+
+# Save the DataFrame as a JSON file
+json_file_path = "../data/jobs.json"  # Specify your path here
+df.to_json(json_file_path, orient="records", lines=True)
+
+print(f"Data saved to {json_file_path}")
