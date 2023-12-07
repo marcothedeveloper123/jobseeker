@@ -22,7 +22,7 @@ import re
 LinkedIn Job Scraper
 
 Overview:
-This script scrapes job listings from LinkedIn, targeting job seekers, recruiters, and data analysts. It automates gathering job posting data, handles LinkedIn's verification prompts, and saves the data in a structured format.
+This script scrapes job listings from LinkedIn. It automates gathering job posting data, handles LinkedIn's verification prompts, and saves the data in a structured format.
 
 Usage:
 - Run via command line with arguments for job title, geographical area, remote preference, and experience level.
