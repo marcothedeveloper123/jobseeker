@@ -19,22 +19,34 @@ import logging
 import re
 
 """
-This script scrapes job listings from LinkedIn based on given job title, geographical area, and remote preference.
-It navigates through multiple pages and extracts job details such as title, company name, location, link, and description.
-The scraped data is saved in a JSON file in the specified directory.
+LinkedIn Job Scraper
 
-Rename example.env to .env and enter your LinkedIn credentials in the .env file
+Overview:
+This script scrapes job listings from LinkedIn, targeting job seekers, recruiters, and data analysts. It automates gathering job posting data, handles LinkedIn's verification prompts, and saves the data in a structured format.
 
 Usage:
-python scrapejobs.py -j "Data Engineer" -g "European Union" -r "Remote" -p 5 -d "./data"
+- Run via command line with arguments for job title, geographical area, remote preference, and experience level.
+- Optional LinkedIn search URL (-q/--query_url) overrides individual search parameters.
+- Exports data in JSON or CSV formats.
+- Retries on incomplete page loads; saves data before terminating on terminal errors.
 
-Arguments:
--j/--job_title: Job title to search for (mandatory)
--g/--geography: Geographical area for the job search — "european-union" or "united-states" (default: "European Union")
--r/--remote: Remote job preference — on-site, remote, hybrid, on-site-or-remote, on-site-or-hybrid, hybrid-or-remote, or any (default: "Remote")
--p/--page_count: Number of pages to scrape (default: 5)
--d/--directory: Directory to save the data file (default: current directory)
--f/--format: File format to save to JSON or CSV (default: "json")
+Command Line Arguments:
+- -j/--job_title: Job title to search for.
+- -g/--geography: Geographical area (e.g., 'european-union', 'united-states').
+- -r/--remote: Remote job preference (e.g., 'remote', 'on-site').
+- -e/--experience: Experience level required (e.g., 'entry-level', 'mid-senior-level').
+- -p/--page_count: Number of pages to scrape.
+- -d/--directory: Directory to save the data file.
+- -f/--format: File format (JSON or CSV).
+- -q/--query_url: LinkedIn search URL (optional).
+
+Note:
+- Requires user intervention post-login for LinkedIn verification.
+
+Example:
+`python scrapejobs.py -j "Data Engineer" -g "european-union" -r "remote" -p 5 -d "./data" -f "csv"`
+Or
+`python scrapejobs.py -q "<LinkedIn search URL>" -p 5 -d "./data" -f "csv"`
 """
 
 TO_JSON = "json"
