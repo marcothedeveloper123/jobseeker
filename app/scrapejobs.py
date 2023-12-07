@@ -8,7 +8,7 @@ from selenium.common.exceptions import (
     TimeoutException,
     WebDriverException,
 )
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, parse_qs
 import os
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
@@ -35,9 +35,11 @@ Command Line Arguments:
 - -g/--geography: Geographical area (e.g., 'european-union', 'united-states').
 - -r/--remote: Remote job preference (e.g., 'remote', 'on-site').
 - -e/--experience: Experience level required (e.g., 'entry-level', 'mid-senior-level').
+
 - -p/--page_count: Number of pages to scrape.
 - -d/--directory: Directory to save the data file.
 - -f/--format: File format (JSON or CSV).
+
 - -q/--query_url: LinkedIn search URL (optional).
 
 Note:
@@ -52,6 +54,15 @@ Or
 TO_JSON = "json"
 TO_CSV = "csv"
 
+# ANSI escape sequences for colors
+CYAN = "\033[36m"
+RESET = "\033[0m"
+
+
+def debug_cyan(message):
+    logger.debug(f"{CYAN}{message}{RESET}")
+
+
 # Logger configuration
 # logging.basicConfig(
 #     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -59,8 +70,15 @@ TO_CSV = "csv"
 logging.basicConfig(
     level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s"
 )
+# logging.basicConfig(
+#     level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
+# )
 
 logger = logging.getLogger(__name__)
+
+
+def debug_cyan(message):
+    logger.debug(f"{CYAN}{message}{RESET}")
 
 
 class WebNavigator:
@@ -170,17 +188,54 @@ class WebNavigator:
 
         """
         try:
-            params = urlencode(
-                {
-                    "keywords": self.query.job_title,
-                    "geoId": self.query.geography,
-                    "f_WT": self.query.remote,
-                    "start": start,
-                    "f_E": self.query.experience,
+            if self.query.query_url:
+                parsed_url = urlparse(self.query.query_url)
+                original_query_params = parse_qs(parsed_url.query)
+
+                # Log original parameters
+                debug_cyan(f"Original query params: {original_query_params}")
+
+                # Create a new dictionary excluding 'currentJobId' and 'start'
+                query_params = {
+                    k: v
+                    for k, v in original_query_params.items()
+                    if k not in ["currentJobId", "start"]
                 }
-            )
-            url = f"https://www.linkedin.com/jobs/search/?{params}"
-            self.safe_get(url)
+
+                # Log modified parameters
+                debug_cyan(
+                    f"Modified query params (before adding 'start'): {query_params}"
+                )
+
+                # Add the 'start' parameter based on the current page
+                query_params["start"] = [str(start)]
+
+                # Log final parameters
+                debug_cyan(f"Final query params (after adding 'start'): {query_params}")
+
+                # Reconstruct the URL with updated parameters
+                final_url = parsed_url._replace(
+                    query=urlencode(query_params, doseq=True)
+                ).geturl()
+
+                # Log the final URL for verification
+                logger.info(f"Final URL: {final_url}")
+
+                # Log the final URL
+                debug_cyan(f"Final URL: {final_url}")
+
+            else:
+                params = urlencode(
+                    {
+                        "keywords": self.query.job_title,
+                        "geoId": self.query.geography,
+                        "f_WT": self.query.remote,
+                        "start": start,
+                        "f_E": self.query.experience,
+                    }
+                )
+                final_url = f"https://www.linkedin.com/jobs/search/?{params}"
+            self.safe_get(final_url)
 
             job_list_container = WebDriverWait(self.driver, 1).until(
                 EC.presence_of_element_located(
@@ -410,13 +465,33 @@ class LinkedIn:
 
 
 class Query:
-    # Initializes the query with job title, geographical area, and remote preference
-    def __init__(self, site, job_title, geography, remote, experience):
+    def __init__(
+        self, site, job_title="", geography="", remote="", experience="", query_url=""
+    ):
         self.site = site
+        # Initialize attributes with default values
         self.job_title = job_title
-        self.geography = site.set_geography(geography)
-        self.remote = site.set_remote(remote)
-        self.experience = site.set_experience(experience)
+        self.geography = geography
+        self.remote = remote
+        self.experience = experience
+
+        if query_url:
+            self.query_url = query_url
+            self.extract_parameters_from_url()
+        else:
+            self.geography = site.set_geography(geography)
+            self.remote = site.set_remote(remote)
+            self.experience = site.set_experience(experience)
+
+    def extract_parameters_from_url(self):
+        parsed_url = urlparse(self.query_url)
+        query_params = parse_qs(parsed_url.query)
+
+        # Update attributes from URL parameters if available
+        self.job_title = query_params.get("keywords", [self.job_title])[0]
+        self.geography = query_params.get("geoId", [self.geography])[0]
+        self.remote = query_params.get("f_WT", [self.remote])[0]
+        self.experience = query_params.get("f_E", [self.experience])[0]
 
 
 class Job:
@@ -432,19 +507,19 @@ class Job:
         self.job_description = job_description
 
 
-def save_to_file(jobs, args):
+def save_to_file(jobs, query, args):
     # Saves the scraped data to a CSV or JSON file
-    file_format = args.format
     job_dicts = [job.__dict__ for job in jobs]
     df = pd.DataFrame(job_dicts)
 
-    job_title = args.job_title.replace(" ", "_")
-    geography = args.geography.replace(" ", "_")
-    remote = args.remote.replace(" ", "_")
-    base_path = args.directory if args.directory else ""
+    # Saves the scraped data to a CSV or JSON file
+    job_title = query.job_title.replace(" ", "_")
+    geography = query.geography.replace(" ", "_")
+    remote = query.remote.replace(" ", "_")
     base_name = f"jobs_{job_title}_-_{geography}_-_{remote}_-_LinkedIn"
+    file_format = args.format
     file_extension = f".{file_format}"
-    final_path = rename_existing_file(base_path, base_name, file_extension)
+    final_path = rename_existing_file(args.directory, base_name, file_extension)
 
     # Save DataFrame to file based on the specified format
     if file_format == TO_JSON:
@@ -468,7 +543,15 @@ def rename_existing_file(base_path, base_name, file_extension):
 
 
 def main():
+    # Main argument parser
     parser = argparse.ArgumentParser(description="Job scraper")
+    parser.add_argument("-q", "--query_url", type=str, help="LinkedIn query URL.")
+
+    # Conditional requirement for the job title
+    parser.add_argument(
+        "-j", "--job_title", type=str, required=False, help="Job title to search for."
+    )
+
     # parser.add_argument(
     #     "-s",
     #     "--site",
@@ -477,9 +560,7 @@ def main():
     #     choices=["linkedin"],
     #     help='Site to scrape. Currently only supports "linkedin".',
     # )
-    parser.add_argument(
-        "-j", "--job_title", type=str, required=True, help="Job title to search for."
-    )
+
     parser.add_argument(
         "-g",
         "--geography",
@@ -488,13 +569,6 @@ def main():
         choices=["european-union", "united-states"],
         help='Geographical area for the job search. Default is "european-union".',
     )
-    # parser.add_argument(
-    #     "-r",
-    #     "--remote",
-    #     type=str,
-    #     default="Remote",
-    #     help='Remote job preference. Default is "Remote".',
-    # )
     parser.add_argument(
         "-r",
         "--remote",
@@ -524,7 +598,6 @@ def main():
         default="",
         help="File path where the JSON file will be saved. Default is the current directory.",
     )
-
     parser.add_argument(
         "-f",
         "--format",
@@ -533,7 +606,6 @@ def main():
         default=TO_JSON,
         help="Format of the output file. Can be either 'csv' or 'json'. Default is 'json'.",
     )
-
     parser.add_argument(
         "-e",
         "--experience",
@@ -542,7 +614,14 @@ def main():
         help='Specify the required experience: internship ("1"), entry-level ("2"), associate ("3"), mid-senior-level ("4"), director ("5"), executive ("6"). Combine experience levels separated by commas (lowest level first. E.g., "1,2,3"). Default is "1,2,3,4,5,6".',
     )
 
+    # Parse the arguments
     args = parser.parse_args()
+
+    # Additional logic to make job_title required if query_url is not provided
+    if not args.query_url and not args.job_title:
+        parser.error(
+            "the following arguments are required: -j/--job_title when -q/--query_url is not provided"
+        )
 
     load_dotenv()
     site = LinkedIn()
@@ -552,115 +631,141 @@ def main():
         geography=args.geography,
         remote=args.remote,
         experience=args.experience,
+        query_url=args.query_url,  # Assuming you've added an argument for query_url
     )
     navigator = WebNavigator(site=site, query=query)
     page_count = args.page_count
 
     index = 0
     jobs = []
-    with tqdm(total=page_count, desc="Scraping Pages", unit="page") as page_pbar:
-        for page_num in range(1, page_count + 1):
-            start = (page_num - 1) * 25
-            navigator.search_results(start)
+    with tqdm(
+        total=page_count * 25, desc="Total Jobs Processed", unit="job"
+    ) as total_job_pbar:
+        with tqdm(total=page_count, desc="Scraping Pages", unit="page") as page_pbar:
+            for page_num in range(1, page_count + 1):
+                start = (page_num - 1) * 25
+                navigator.search_results(start)
 
-            page_source = navigator.page_source()
+                page_source = navigator.page_source()
 
-            job_postings = page_source.find_all("li", class_=site.job_list_item())
-            num_job_postings = len(job_postings)
-            logger.info(f"Number of job postings found: {len(page_source)}")
+                job_postings = page_source.find_all("li", class_=site.job_list_item())
+                num_job_postings = len(job_postings)
+                logger.info(f"Number of job postings found: {len(page_source)}")
 
-            search_result_list = page_source.find(
-                "div", class_=site.search_results_list()
-            )
+                search_result_list = page_source.find(
+                    "div", class_=site.search_results_list()
+                )
 
-            with tqdm(
-                total=25, desc=f"Page {page_num} Jobs", leave=False, unit="job"
-            ) as job_pbar:
-                for item in search_result_list.find_all(
-                    "li", class_=site.job_list_item()
-                ):
-                    logger.info(f"Processing job {index + 1}")
+                # Check if search_result_list is not None and re-scroll if necessary
+                if search_result_list is None:
+                    logger.warning("Initial search results not found, re-scrolling...")
+                    navigator.re_scroll()
+                    page_source = navigator.page_source()
+                    search_result_list = page_source.find(
+                        "div", class_=site.search_results_list()
+                    )
 
-                    try:
-                        job_title_element = item.find("a", class_=site.job_title())
-                        if job_title_element is None:
-                            logger.error("Re-scrolling to load job posting")
-                            navigator.re_scroll()
-                            page_source = navigator.page_source()
-                            search_result_list = page_source.find(
-                                "div", class_=site.search_results_list()
-                            )
-                            job_list_items = search_result_list.find_all(
-                                "li", class_=site.job_list_item()
-                            )
-                            if len(job_list_items) < index + 1:
-                                logger.error(
-                                    "No job title found. Skipping to the next page."
-                                )
-                                job_pbar.update(
-                                    1
-                                )  # Update progress bar before breaking out of inner loop
-                                break
-                            item = search_result_list.find_all(
-                                "li", class_=site.job_list_item()
-                            )[index]
+                    # If still None after re-scrolling
+                    if search_result_list is None:
+                        logger.error(
+                            "Failed to find search results after re-scrolling."
+                        )
+                        continue  # Skip to the next page
+
+                with tqdm(
+                    total=25, desc=f"Page {page_num} Jobs", leave=False, unit="job"
+                ) as job_pbar:
+                    for item in search_result_list.find_all(
+                        "li", class_=site.job_list_item()
+                    ):
+                        logger.info(f"Processing job {index + 1}")
+
+                        try:
                             job_title_element = item.find("a", class_=site.job_title())
                             if job_title_element is None:
+                                logger.error("Re-scrolling to load job posting")
+                                navigator.re_scroll()
+                                page_source = navigator.page_source()
+                                search_result_list = page_source.find(
+                                    "div", class_=site.search_results_list()
+                                )
+                                job_list_items = search_result_list.find_all(
+                                    "li", class_=site.job_list_item()
+                                )
+                                if len(job_list_items) < index + 1:
+                                    logger.error(
+                                        "No job title found. Skipping to the next page."
+                                    )
+                                    job_pbar.update(
+                                        1
+                                    )  # Update progress bar before breaking out of inner loop
+                                    break
+                                item = search_result_list.find_all(
+                                    "li", class_=site.job_list_item()
+                                )[index]
+                                job_title_element = item.find(
+                                    "a", class_=site.job_title()
+                                )
+                                if job_title_element is None:
+                                    logger.error(
+                                        "No job title found. Skipping to the next page."
+                                    )
+                                    job_pbar.update(
+                                        1
+                                    )  # Update progress bar before breaking out of inner loop
+                                    break
+                            job_title = job_title_element.text.strip()
+                            logger.info(f"Job title: {job_title}")
+                            company_name = item.find(
+                                "span", class_=site.company_name()
+                            ).text.strip()
+                            logger.info(f"Company name: {company_name}")
+                            location = item.find(
+                                "li", class_=site.location()
+                            ).text.strip()
+                            logger.info(f"Location: {location}")
+                            job_link = item.find("a", class_=site.job_link())["href"]
+                            logger.info(f"Job link: {job_link}")
+                            job_id = job_link.split("/view/")[1].split("/")[0]
+                            logger.info(f"Job ID: {job_id}")
+
+                            navigator.open_post(job_link)
+                            page_source = navigator.page_source()
+
+                            job_description_element = page_source.find(
+                                "div", class_=site.job_description()
+                            )
+                            if job_description_element is None:
                                 logger.error(
-                                    "No job title found. Skipping to the next page."
+                                    "No job description found. Skipping to the next page."
                                 )
                                 job_pbar.update(
                                     1
                                 )  # Update progress bar before breaking out of inner loop
                                 break
-                        job_title = job_title_element.text.strip()
-                        logger.info(f"Job title: {job_title}")
-                        company_name = item.find(
-                            "span", class_=site.company_name()
-                        ).text.strip()
-                        logger.info(f"Company name: {company_name}")
-                        location = item.find("li", class_=site.location()).text.strip()
-                        logger.info(f"Location: {location}")
-                        job_link = item.find("a", class_=site.job_link())["href"]
-                        logger.info(f"Job link: {job_link}")
-                        job_id = job_link.split("/view/")[1].split("/")[0]
-                        logger.info(f"Job ID: {job_id}")
-
-                        navigator.open_post(job_link)
-                        page_source = navigator.page_source()
-
-                        job_description_element = page_source.find(
-                            "div", class_=site.job_description()
-                        )
-                        if job_description_element is None:
-                            logger.error(
-                                "No job description found. Skipping to the next page."
+                            job_description = job_description_element.text.strip()
+                            job_link = site.base_url() + job_link
+                            job = Job(
+                                job_title,
+                                company_name,
+                                location,
+                                job_link,
+                                job_id,
+                                job_description,
                             )
-                            job_pbar.update(
-                                1
-                            )  # Update progress bar before breaking out of inner loop
-                            break
-                        job_description = job_description_element.text.strip()
-                        job_link = site.base_url() + job_link
-                        job = Job(
-                            job_title,
-                            company_name,
-                            location,
-                            job_link,
-                            job_id,
-                            job_description,
-                        )
-                        jobs.append(job)
-                    except (TimeoutException, WebDriverException) as e:
-                        logger.error(f"Error generating job post: {e}")
-                        save_to_file(jobs, args)
-                        return  # Exit the program
-                    job_pbar.update(1)
-                    logger.info("========")
-                    index += 1
-            page_pbar.update(1)
+                            jobs.append(job)
+                        except (TimeoutException, WebDriverException) as e:
+                            logger.error(f"Error generating job post: {e}")
+                            save_to_file(jobs, query, args)
+                            return  # Exit the program
+                        job_pbar.update(1)
+                        total_job_pbar.n = len(jobs)
+                        total_job_pbar.refresh()
+                        logger.info("========")
+                        index += 1
+                page_pbar.update(1)
 
-    save_to_file(jobs, args)
+    save_to_file(jobs, query, args)
     navigator.quit()
 
 
