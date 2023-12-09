@@ -541,7 +541,6 @@ def rename_existing_file(base_path, base_name, file_extension):
         os.rename(final_path, os.path.join(base_path, new_name))
     return final_path
 
-
 def main():
     # Main argument parser
     parser = argparse.ArgumentParser(description="Job scraper")
@@ -637,133 +636,124 @@ def main():
     page_count = args.page_count
 
     index = 0
+    total_jobs = page_count * 25  # Assuming each page has 25 jobs
     jobs = []
     with tqdm(
-        total=page_count * 25, desc="Total Jobs Processed", unit="job"
-    ) as total_job_pbar:
-        with tqdm(total=page_count, desc="Scraping Pages", unit="page") as page_pbar:
-            for page_num in range(1, page_count + 1):
-                start = (page_num - 1) * 25
-                navigator.search_results(start)
+        total=total_jobs,
+        desc=f"Page 1 out of {page_count}, 0 Jobs out of {total_jobs}",
+        unit="job",
+    ) as pbar:
+        # with tqdm(total=page_count, desc="Scraping Pages", unit="page") as page_pbar:
+        for page_num in range(1, page_count + 1):
+            start = (page_num - 1) * 25
+            navigator.search_results(start)
 
+            page_source = navigator.page_source()
+
+            job_postings = page_source.find_all("li", class_=site.job_list_item())
+            num_job_postings = len(job_postings)
+            logger.info(f"Number of job postings found: {len(page_source)}")
+
+            search_result_list = page_source.find(
+                "div", class_=site.search_results_list()
+            )
+
+            # Check if search_result_list is not None and re-scroll if necessary
+            if search_result_list is None:
+                logger.warning("Initial search results not found, re-scrolling...")
+                navigator.re_scroll()
                 page_source = navigator.page_source()
-
-                job_postings = page_source.find_all("li", class_=site.job_list_item())
-                num_job_postings = len(job_postings)
-                logger.info(f"Number of job postings found: {len(page_source)}")
-
                 search_result_list = page_source.find(
                     "div", class_=site.search_results_list()
                 )
 
-                # Check if search_result_list is not None and re-scroll if necessary
+                # If still None after re-scrolling
                 if search_result_list is None:
-                    logger.warning("Initial search results not found, re-scrolling...")
-                    navigator.re_scroll()
-                    page_source = navigator.page_source()
-                    search_result_list = page_source.find(
-                        "div", class_=site.search_results_list()
+                    logger.error(
+                        "Failed to find search results after re-scrolling."
                     )
+                    continue  # Skip to the next page
 
-                    # If still None after re-scrolling
-                    if search_result_list is None:
-                        logger.error(
-                            "Failed to find search results after re-scrolling."
+            for item in search_result_list.find_all(
+                "li", class_=site.job_list_item()
+            ):
+                logger.info(f"Processing job {index + 1}")
+
+                try:
+                    job_title_element = item.find("a", class_=site.job_title())
+                    if job_title_element is None:
+                        logger.error("Re-scrolling to load job posting")
+                        navigator.re_scroll()
+                        page_source = navigator.page_source()
+                        search_result_list = page_source.find(
+                            "div", class_=site.search_results_list()
                         )
-                        continue  # Skip to the next page
-
-                with tqdm(
-                    total=25, desc=f"Page {page_num} Jobs", leave=False, unit="job"
-                ) as job_pbar:
-                    for item in search_result_list.find_all(
-                        "li", class_=site.job_list_item()
-                    ):
-                        logger.info(f"Processing job {index + 1}")
-
-                        try:
-                            job_title_element = item.find("a", class_=site.job_title())
-                            if job_title_element is None:
-                                logger.error("Re-scrolling to load job posting")
-                                navigator.re_scroll()
-                                page_source = navigator.page_source()
-                                search_result_list = page_source.find(
-                                    "div", class_=site.search_results_list()
-                                )
-                                job_list_items = search_result_list.find_all(
-                                    "li", class_=site.job_list_item()
-                                )
-                                if len(job_list_items) < index + 1:
-                                    logger.error(
-                                        "No job title found. Skipping to the next page."
-                                    )
-                                    job_pbar.update(
-                                        1
-                                    )  # Update progress bar before breaking out of inner loop
-                                    break
-                                item = search_result_list.find_all(
-                                    "li", class_=site.job_list_item()
-                                )[index]
-                                job_title_element = item.find(
-                                    "a", class_=site.job_title()
-                                )
-                                if job_title_element is None:
-                                    logger.error(
-                                        "No job title found. Skipping to the next page."
-                                    )
-                                    job_pbar.update(
-                                        1
-                                    )  # Update progress bar before breaking out of inner loop
-                                    break
-                            job_title = job_title_element.text.strip()
-                            logger.info(f"Job title: {job_title}")
-                            company_name = item.find(
-                                "span", class_=site.company_name()
-                            ).text.strip()
-                            logger.info(f"Company name: {company_name}")
-                            location = item.find(
-                                "li", class_=site.location()
-                            ).text.strip()
-                            logger.info(f"Location: {location}")
-                            job_link = item.find("a", class_=site.job_link())["href"]
-                            logger.info(f"Job link: {job_link}")
-                            job_id = job_link.split("/view/")[1].split("/")[0]
-                            logger.info(f"Job ID: {job_id}")
-
-                            navigator.open_post(job_link)
-                            page_source = navigator.page_source()
-
-                            job_description_element = page_source.find(
-                                "div", class_=site.job_description()
+                        job_list_items = search_result_list.find_all(
+                            "li", class_=site.job_list_item()
+                        )
+                        if len(job_list_items) < index + 1:
+                            logger.error(
+                                "No job title found. Skipping to the next page."
                             )
-                            if job_description_element is None:
-                                logger.error(
-                                    "No job description found. Skipping to the next page."
-                                )
-                                job_pbar.update(
-                                    1
-                                )  # Update progress bar before breaking out of inner loop
-                                break
-                            job_description = job_description_element.text.strip()
-                            job_link = site.base_url() + job_link
-                            job = Job(
-                                job_title,
-                                company_name,
-                                location,
-                                job_link,
-                                job_id,
-                                job_description,
+                            break
+                        item = search_result_list.find_all(
+                            "li", class_=site.job_list_item()
+                        )[index]
+                        job_title_element = item.find(
+                            "a", class_=site.job_title()
+                        )
+                        if job_title_element is None:
+                            logger.error(
+                                "No job title found. Skipping to the next page."
                             )
-                            jobs.append(job)
-                        except (TimeoutException, WebDriverException) as e:
-                            logger.error(f"Error generating job post: {e}")
-                            save_to_file(jobs, query, args)
-                            return  # Exit the program
-                        job_pbar.update(1)
-                        total_job_pbar.n = len(jobs)
-                        total_job_pbar.refresh()
-                        logger.info("========")
-                        index += 1
-                page_pbar.update(1)
+                            break
+                    job_title = job_title_element.text.strip()
+                    logger.info(f"Job title: {job_title}")
+                    company_name = item.find(
+                        "span", class_=site.company_name()
+                    ).text.strip()
+                    logger.info(f"Company name: {company_name}")
+                    location = item.find(
+                        "li", class_=site.location()
+                    ).text.strip()
+                    logger.info(f"Location: {location}")
+                    job_link = item.find("a", class_=site.job_link())["href"]
+                    logger.info(f"Job link: {job_link}")
+                    job_id = job_link.split("/view/")[1].split("/")[0]
+                    logger.info(f"Job ID: {job_id}")
+
+                    navigator.open_post(job_link)
+                    page_source = navigator.page_source()
+
+                    job_description_element = page_source.find(
+                        "div", class_=site.job_description()
+                    )
+                    if job_description_element is None:
+                        logger.error(
+                            "No job description found. Skipping to the next page."
+                        )
+                        break
+                    job_description = job_description_element.text.strip()
+                    job_link = site.base_url() + job_link
+                    job = Job(
+                        job_title,
+                        company_name,
+                        location,
+                        job_link,
+                        job_id,
+                        job_description,
+                    )
+                    jobs.append(job)
+                except (TimeoutException, WebDriverException) as e:
+                    logger.error(f"Error generating job post: {e}")
+                    save_to_file(jobs, query, args)
+                    return  # Exit the program
+                pbar.set_description(
+                    f"Page {page_num} out of {page_count}, {len(jobs)} Jobs out of {total_jobs}"
+                )
+                pbar.update(1)
+                logger.info("========")
+                index += 1
 
     save_to_file(jobs, query, args)
     navigator.quit()
