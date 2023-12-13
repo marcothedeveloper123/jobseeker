@@ -3,3 +3,5 @@ pandas==2.1.3
 python-dotenv==1.0.0
 selenium==4.16.0
 tqdm==4.66.1
+sqlmodel==0.0.14
+pymssql==2.2.11
