@@ -5,3 +5,5 @@ selenium==4.16.0
 tqdm==4.66.1
 sqlmodel==0.0.14
 pymssql==2.2.11
+pydantic==2.5.2
+tqdm==4.66.1
