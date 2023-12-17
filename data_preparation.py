@@ -3,7 +3,7 @@ import json
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 
-def prepare_data():
+def prepare_data(file_path):
     """
     Load data from a JSON file, clean the skills column, and create additional columns.
 
@@ -11,11 +11,6 @@ def prepare_data():
     - pd.DataFrame
         A dataframe containing the prepared data.
     """
-
-    # Specify the file path for the JSON data
-    file_path = (
-        r"data/silver/head_of_product/skills_json_from_df_head_of_product_v4.json"
-    )
 
     # Load data from the JSON file
     with open(file_path, "r") as file:
@@ -47,7 +42,6 @@ def prepare_data():
 
         # Count uniques and summarize
         df["num_uniques"] = df["unique_words"].apply(len)
-        # word_counts = df.groupby("job_title")["num_uniques"].sum()
 
     return df
 
