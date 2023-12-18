@@ -54,7 +54,7 @@ from tqdm import tqdm
 
 load_dotenv()
 
-CHROME_BINARY_LOCATION = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CHROME_BINARY_LOCATION = os.getenv("CHROME_BINARY_LOCATION")
 
 LOGIN_URL_LINKEDIN = "https://www.linkedin.com/login"
 LOGIN_BUTTON_XPATH_LINKEDIN = '//*[@id="organic-div"]/form/div[3]/button'
