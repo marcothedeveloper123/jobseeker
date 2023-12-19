@@ -54,7 +54,7 @@ from tqdm import tqdm
 
 load_dotenv()
 
-CHROME_BINARY_LOCATION = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CHROME_BINARY_LOCATION = os.getenv("CHROME_BINARY_LOCATION")
 
 LOGIN_URL_LINKEDIN = "https://www.linkedin.com/login"
 LOGIN_BUTTON_XPATH_LINKEDIN = '//*[@id="organic-div"]/form/div[3]/button'
@@ -619,9 +619,12 @@ def is_valid_url(url):
     return re.match(regex, url) is not None
 
 
-def get_new_filename(keyword, location, file_format, directory="./"):
+def get_new_filename(keyword, location, file_format, directory="./data/bronze/marco_script/"):
+    # Set the current working directory to the project root
+    os.chdir(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
     # Create a valid filename
-    filename = f"{keyword}_({location})".replace(" ", "_")
+    filename = f"jobs_{keyword}_-_{location}".replace(" ", "_")
     filename = re.sub(
         r"[^\w\s]", "", filename
     )  # Remove any non-alphanumeric characters
@@ -650,9 +653,9 @@ def get_new_filename(keyword, location, file_format, directory="./"):
     return os.path.join(directory, base_filename)
 
 
-def get_new_filename_old(keyword, location, file_format, directory="./"):
+def get_new_filename_old(keyword, location, file_format, directory="../data/bronze/marco_script/"):
     # Create a valid filename
-    filename = f"{keyword}_({location})".replace(" ", "_")
+    filename = f"jobs_{keyword}_-_{location}".replace(" ", "_")
     filename = re.sub(
         r"[^\w\s]", "", filename
     )  # Remove any non-alphanumeric characters
